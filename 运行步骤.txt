@@ -32,4 +32,7 @@
 4. 运行系统：
    ```cmd
    python app.py
-   ```*/
+   ```
+   
+步骤4：输入网址http://localhost:5000
+*/
