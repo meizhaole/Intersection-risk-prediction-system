@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>交通风险预警系统</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: Arial, sans-serif; }
+        body { background: #f5f5f5; padding: 20px; }
+        .container { max-width: 1000px; margin: 0 auto; background: white; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        header { background: #2c3e50; color: white; padding: 20px; text-align: center; border-radius: 10px 10px 0 0; }
+        .content { padding: 20px; }
+        .panel { background: #f8f9fa; padding: 15px; margin-bottom: 15px; border-radius: 5px; border-left: 4px solid #3498db; }
+        .upload-area { border: 2px dashed #3498db; padding: 30px; text-align: center; margin-bottom: 15px; border-radius: 5px; cursor: pointer; }
+        .btn { background: #3498db; color: white; border: none; padding: 10px 20px; margin: 5px; border-radius: 5px; cursor: pointer; }
+        .btn-success { background: #27ae60; }
+        .btn:disabled { background: #95a5a6; cursor: not-allowed; }
+        .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; margin: 15px 0; }
+        .stat-card { background: white; padding: 15px; text-align: center; border-radius: 5px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        .stat-number { font-size: 24px; font-weight: bold; }
+        .progress { background: #ecf0f1; height: 20px; border-radius: 10px; margin: 10px 0; overflow: hidden; }
+        .progress-bar { background: #3498db; height: 100%; width: 0%; transition: width 0.3s; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        th, td { padding: 10px; text-align: left; border-bottom: 1px solid #ddd; }
+        th { background: #34495e; color: white; }
+        .error { background: #e74c3c; color: white; padding: 10px; margin: 10px 0; border-radius: 5px; display: none; }
+        .success { background: #27ae60; color: white; padding: 10px; margin: 10px 0; border-radius: 5px; display: none; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🚦 交通风险预警系统</h1>
+            <p>检测超速、闯红灯、逆行等违规行为</p>
+        </header>
+        
+        <div class="content">
+            <!-- 上传区域 -->
+            <div class="panel">
+                <h2>视频分析</h2>
+                <div class="upload-area" id="uploadArea">
+                    <div style="font-size: 48px; margin-bottom: 10px;">📹</div>
+                    <h3>点击上传交通视频</h3>
+                    <p>支持 MP4, AVI, MOV 格式</p>
+                    <input type="file" id="videoFile" accept="video/*" style="display: none;">
+                    <button class="btn" id="uploadBtn">选择文件</button>
+                </div>
+                
+                <div id="fileInfo" style="display: none; margin: 15px 0;">
+                    <p>已选择: <strong id="fileName"></strong></p>
+                    <button class="btn btn-success" id="analyzeBtn">开始分析</button>
+                </div>
+                
+                <div class="error" id="errorMessage"></div>
+                <div class="success" id="successMessage"></div>
+                
+                <div id="progressSection" style="display: none;">
+                    <h3>分析进度</h3>
+                    <div class="progress">
+                        <div class="progress-bar" id="progressBar"></div>
+                    </div>
+                    <p id="progressText">准备开始...</p>
+                </div>
+            </div>
+            
+            <!-- 统计信息 -->
+            <div class="panel">
+                <h2>实时统计</h2>
+                <div class="stats">
+                    <div class="stat-card">
+                        <div class="stat-number" id="totalVehicles">0</div>
+                        <div>车流量</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number" id="violationCount">0</div>
+                        <div>违规次数</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number" id="accidentRisk">0%</div>
+                        <div>事故风险</div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 违规详情 -->
+            <div class="panel">
+                <h2>违规详情</h2>
+                <table id="violationsTable">
+                    <thead>
+                        <tr>
+                            <th>类型</th>
+                            <th>车牌</th>
+                            <th>描述</th>
+                            <th>时间</th>
+                            <th>位置</th>
+                        </tr>
+                    </thead>
+                    <tbody id="violationsBody">
+                        <tr><td colspan="5" style="text-align: center;">暂无数据</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentFilename = '';
+        
+        document.addEventListener('DOMContentLoaded', function() {
+            const uploadBtn = document.getElementById('uploadBtn');
+            const fileInput = document.getElementById('videoFile');
+            const analyzeBtn = document.getElementById('analyzeBtn');
+            
+            // 上传按钮点击
+            uploadBtn.addEventListener('click', function() {
+                fileInput.click();
+            });
+            
+            // 文件选择
+            fileInput.addEventListener('change', function() {
+                if (this.files.length > 0) {
+                    handleFileSelect(this.files[0]);
+                }
+            });
+            
+            // 分析按钮点击
+            analyzeBtn.addEventListener('click', analyzeVideo);
+        });
+        
+        function handleFileSelect(file) {
+            // 简单验证
+            if (!file.type.startsWith('video/')) {
+                showError('请选择视频文件');
+                return;
+            }
+            
+            if (file.size > 100 * 1024 * 1024) {
+                showError('文件太大，请选择小于100MB的文件');
+                return;
+            }
+            
+            // 显示文件信息
+            document.getElementById('fileName').textContent = file.name;
+            document.getElementById('fileInfo').style.display = 'block';
+            
+            // 上传文件
+            uploadVideo(file);
+        }
+        
+        function uploadVideo(file) {
+            const formData = new FormData();
+            formData.append('video', file);
+            
+            showProgress('上传中...', 20);
+            
+            fetch('/upload', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    throw new Error(data.error);
+                }
+                
+                currentFilename = data.filename;
+                showProgress('上传成功!', 40);
+                document.getElementById('analyzeBtn').disabled = false;
+                showSuccess('文件上传成功，可以开始分析了');
+            })
+            .catch(error => {
+                showError('上传失败: ' + error.message);
+            });
+        }
+        
+        function analyzeVideo() {
+            if (!currentFilename) {
+                showError('请先上传文件');
+                return;
+            }
+            
+            showProgress('分析中...', 60);
+            document.getElementById('analyzeBtn').disabled = true;
+            
+            fetch('/analyze', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    filename: currentFilename
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    throw new Error(data.error);
+                }
+                
+                // 模拟进度
+                setTimeout(() => {
+                    showProgress('生成报告...', 100);
+                    setTimeout(() => {
+                        displayResults(data.results);
+                        showSuccess('分析完成!');
+                    }, 1000);
+                }, 2000);
+            })
+            .catch(error => {
+                showError('分析失败: ' + error.message);
+                document.getElementById('analyzeBtn').disabled = false;
+            });
+        }
+        
+        function displayResults(results) {
+            // 更新统计数据
+            document.getElementById('totalVehicles').textContent = results.real_time_stats.vehicle_count;
+            document.getElementById('violationCount').textContent = results.real_time_stats.violation_count;
+            document.getElementById('accidentRisk').textContent = results.accident_probability + '%';
+            
+            // 更新违规表格
+            const tbody = document.getElementById('violationsBody');
+            tbody.innerHTML = '';
+            
+            if (results.violations.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5" style="text-align: center;">未检测到违规行为</td></tr>';
+            } else {
+                results.violations.forEach(violation => {
+                    const row = document.createElement('tr');
+                    row.innerHTML = `
+                        <td>${getViolationType(violation.type)}</td>
+                        <td>${violation.license_plate}</td>
+                        <td>${violation.description}</td>
+                        <td>${violation.timestamp}</td>
+                        <td>${violation.location}</td>
+                    `;
+                    tbody.appendChild(row);
+                });
+            }
+        }
+        
+        function getViolationType(type) {
+            const types = {
+                'speeding': '🚗 超速',
+                'run_red_light': '🚦 闯红灯',
+                'reverse_driving': '↩️ 逆行',
+                'no_pedestrian_yield': '🚸 未礼让行人',
+                'run_yellow_light': '🟡 黄灯违规'
+            };
+            return types[type] || type;
+        }
+        
+        function showProgress(text, percent) {
+            document.getElementById('progressSection').style.display = 'block';
+            document.getElementById('progressText').textContent = text;
+            document.getElementById('progressBar').style.width = percent + '%';
+        }
+        
+        function showError(message) {
+            document.getElementById('errorMessage').textContent = message;
+            document.getElementById('errorMessage').style.display = 'block';
+            document.getElementById('successMessage').style.display = 'none';
+        }
+        
+        function showSuccess(message) {
+            document.getElementById('successMessage').textContent = message;
+            document.getElementById('successMessage').style.display = 'block';
+            document.getElementById('errorMessage').style.display = 'none';
+        }
+    </script>
+</body>
+</html>
