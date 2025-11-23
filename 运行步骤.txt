@@ -1,0 +1,35 @@
+/*
+🚀 运行步骤
+
+步骤1：创建项目文件
+
+1. 创建一个文件夹，比如叫 traffic-system
+2. 在文件夹中创建两个文件：
+   · app.py (后端代码)
+   · templates/index.html (前端代码)
+
+步骤2：放置代码文件
+
+步骤3：运行系统
+
+方法一：使用命令提示符（推荐）
+
+1. 打开命令提示符：
+   · 按 Win + R，输入 cmd，按回车
+   · 或者在开始菜单搜索"cmd"
+2. 导航到项目文件夹：
+   ```cmd
+   cd 你的文件夹路径
+   ```
+   例如：
+   ```cmd
+   cd D:\traffic-system
+   ```
+3. 安装 Flask（如果还没安装）：
+   ```cmd
+   pip install flask
+   ```
+4. 运行系统：
+   ```cmd
+   python app.py
+   ```*/
