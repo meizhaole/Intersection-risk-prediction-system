@@ -1,0 +1,583 @@
+OLED I2C.c代码
+#include "oled_i2c.h"
+#include "delay.h"
+#include "string.h"
+
+// I2C引脚定义
+#define I2C_SCL_PIN GPIO_Pin_6
+#define I2C_SDA_PIN GPIO_Pin_7
+#define I2C_PORT GPIOB
+
+// 8x16 ASCII字符字库 (ASCII 32-126)
+const uint8_t Font8x16[][16] = {
+    {0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00}, // 空格
+    {0x00,0x00,0x18,0x3C,0x3C,0x3C,0x18,0x18,0x18,0x00,0x18,0x18,0x00,0x00,0x00,0x00}, // !
+    {0x00,0x66,0x66,0x66,0x24,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00}, // "
+    // 这里只显示部分字库，实际使用时需要完整字库
+    {0x00,0x00,0x00,0x6C,0x6C,0xFE,0x6C,0x6C,0x6C,0xFE,0x6C,0x6C,0x00,0x00,0x00,0x00}, // #
+    {0x18,0x18,0x7C,0xC6,0xC2,0xC0,0x7C,0x06,0x06,0x86,0xC6,0x7C,0x18,0x18,0x00,0x00}, // $
+    {0x00,0x00,0x00,0x00,0xC2,0xC6,0x0C,0x18,0x30,0x60,0xC6,0x86,0x00,0x00,0x00,0x00}, // %
+    {0x00,0x00,0x38,0x6C,0x6C,0x38,0x76,0xDC,0xCC,0xCC,0xCC,0x76,0x00,0x00,0x00,0x00}, // &
+    {0x00,0x30,0x30,0x30,0x60,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00}, // '
+    {0x00,0x00,0x0C,0x18,0x30,0x30,0x30,0x30,0x30,0x30,0x18,0x0C,0x00,0x00,0x00,0x00}, // (
+    {0x00,0x00,0x30,0x18,0x0C,0x0C,0x0C,0x0C,0x0C,0x0C,0x18,0x30,0x00,0x00,0x00,0x00}, // )
+    {0x00,0x00,0x00,0x00,0x00,0x66,0x3C,0xFF,0x3C,0x66,0x00,0x00,0x00,0x00,0x00,0x00}, // *
+    {0x00,0x00,0x00,0x00,0x00,0x18,0x18,0x7E,0x18,0x18,0x00,0x00,0x00,0x00,0x00,0x00}, // +
+    {0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x18,0x18,0x18,0x30,0x00,0x00}, // ,
+    {0x00,0x00,0x00,0x00,0x00,0x00,0x00,0xFE,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00}, // -
+    {0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x18,0x18,0x00,0x00,0x00,0x00}, // .
+    {0x00,0x00,0x00,0x00,0x02,0x06,0x0C,0x18,0x30,0x60,0xC0,0x80,0x00,0x00,0x00,0x00}, // /
+    // 数字 0-9
+    {0x00,0x00,0x7C,0xC6,0xC6,0xCE,0xDE,0xF6,0xE6,0xC6,0xC6,0x7C,0x00,0x00,0x00,0x00}, // 0
+    {0x00,0x00,0x18,0x38,0x78,0x18,0x18,0x18,0x18,0x18,0x18,0x7E,0x00,0x00,0x00,0x00}, // 1
+    {0x00,0x00,0x7C,0xC6,0x06,0x0C,0x18,0x30,0x60,0xC0,0xC6,0xFE,0x00,0x00,0x00,0x00}, // 2
+    {0x00,0x00,0x7C,0xC6,0x06,0x06,0x3C,0x06,0x06,0x06,0xC6,0x7C,0x00,0x00,0x00,0x00}, // 3
+    {0x00,0x00,0x0C,0x1C,0x3C,0x6C,0xCC,0xFE,0x0C,0x0C,0x0C,0x1E,0x00,0x00,0x00,0x00}, // 4
+    {0x00,0x00,0xFE,0xC0,0xC0,0xC0,0xFC,0x06,0x06,0x06,0xC6,0x7C,0x00,0x00,0x00,0x00}, // 5
+    {0x00,0x00,0x38,0x60,0xC0,0xC0,0xFC,0xC6,0xC6,0xC6,0xC6,0x7C,0x00,0x00,0x00,0x00}, // 6
+    {0x00,0x00,0xFE,0xC6,0x06,0x06,0x0C,0x18,0x30,0x30,0x30,0x30,0x00,0x00,0x00,0x00}, // 7
+    {0x00,0x00,0x7C,0xC6,0xC6,0xC6,0x7C,0xC6,0xC6,0xC6,0xC6,0x7C,0x00,0x00,0x00,0x00}, // 8
+    {0x00,0x00,0x7C,0xC6,0xC6,0xC6,0x7E,0x06,0x06,0x06,0x0C,0x78,0x00,0x00,0x00,0x00}, // 9
+    // 字母 A-Z
+    {0x00,0x00,0x10,0x38,0x6C,0xC6,0xC6,0xFE,0xC6,0xC6,0xC6,0xC6,0x00,0x00,0x00,0x00}, // A
+    {0x00,0x00,0xFC,0x66,0x66,0x66,0x7C,0x66,0x66,0x66,0x66,0xFC,0x00,0x00,0x00,0x00}, // B
+    {0x00,0x00,0x3C,0x66,0xC2,0xC0,0xC0,0xC0,0xC0,0xC2,0x66,0x3C,0x00,0x00,0x00,0x00}, // C
+    {0x00,0x00,0xF8,0x6C,0x66,0x66,0x66,0x66,0x66,0x66,0x6C,0xF8,0x00,0x00,0x00,0x00}, // D
+    {0x00,0x00,0xFE,0x66,0x62,0x68,0x78,0x68,0x60,0x62,0x66,0xFE,0x00,0x00,0x00,0x00}, // E
+    {0x00,0x00,0xFE,0x66,0x62,0x68,0x78,0x68,0x60,0x60,0x60,0xF0,0x00,0x00,0x00,0x00}, // F
+    // ... 其他字母类似，需要完整实现
+};
+
+// I2C起始信号
+void I2C_Start(void)
+{
+    GPIO_SetBits(I2C_PORT, I2C_SCL_PIN);
+    GPIO_SetBits(I2C_PORT, I2C_SDA_PIN);
+    Delay_us(5);
+    GPIO_ResetBits(I2C_PORT, I2C_SDA_PIN);
+    Delay_us(5);
+    GPIO_ResetBits(I2C_PORT, I2C_SCL_PIN);
+}
+
+// I2C停止信号
+void I2C_Stop(void)
+{
+    GPIO_ResetBits(I2C_PORT, I2C_SCL_PIN);
+    GPIO_ResetBits(I2C_PORT, I2C_SDA_PIN);
+    Delay_us(5);
+    GPIO_SetBits(I2C_PORT, I2C_SCL_PIN);
+    Delay_us(5);
+    GPIO_SetBits(I2C_PORT, I2C_SDA_PIN);
+}
+
+// I2C写一个字节
+void I2C_WriteByte(uint8_t data)
+{
+    uint8_t i;
+    
+    for(i = 0; i < 8; i++)
+    {
+        GPIO_ResetBits(I2C_PORT, I2C_SCL_PIN);
+        if(data & 0x80)
+            GPIO_SetBits(I2C_PORT, I2C_SDA_PIN);
+        else
+            GPIO_ResetBits(I2C_PORT, I2C_SDA_PIN);
+        Delay_us(5);
+        GPIO_SetBits(I2C_PORT, I2C_SCL_PIN);
+        Delay_us(5);
+        data <<= 1;
+    }
+    
+    GPIO_ResetBits(I2C_PORT, I2C_SCL_PIN);
+    GPIO_SetBits(I2C_PORT, I2C_SDA_PIN);
+    Delay_us(5);
+    GPIO_SetBits(I2C_PORT, I2C_SCL_PIN);
+    Delay_us(5);
+    GPIO_ResetBits(I2C_PORT, I2C_SCL_PIN);
+}
+
+// 写命令
+void I2C_WriteCmd(uint8_t cmd)
+{
+    I2C_Start();
+    I2C_WriteByte(0x78);  // OLED地址
+    I2C_WriteByte(0x00);  // 写命令
+    I2C_WriteByte(cmd);
+    I2C_Stop();
+}
+
+// 写数据
+void I2C_WriteData(uint8_t data)
+{
+    I2C_Start();
+    I2C_WriteByte(0x78);  // OLED地址
+    I2C_WriteByte(0x40);  // 写数据
+    I2C_WriteByte(data);
+    I2C_Stop();
+}
+
+// 设置显示位置
+void OLED_SetPos(uint8_t x, uint8_t y)
+{
+    I2C_WriteCmd(0xB0 + y);              // 设置页地址
+    I2C_WriteCmd(((x & 0xF0) >> 4) | 0x10); // 设置列地址高4位
+    I2C_WriteCmd((x & 0x0F) | 0x01);     // 设置列地址低4位
+}
+
+// OLED初始化
+void OLED_Init(void)
+{
+    GPIO_InitTypeDef GPIO_InitStructure;
+    
+    // 使能GPIOB时钟
+    RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOB, ENABLE);
+    
+    // 配置I2C引脚
+    GPIO_InitStructure.GPIO_Pin = I2C_SCL_PIN | I2C_SDA_PIN;
+    GPIO_InitStructure.GPIO_Mode = GPIO_Mode_Out_OD;
+    GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
+    GPIO_Init(I2C_PORT, &GPIO_InitStructure);
+    
+    Delay_ms(100);
+    
+    // OLED初始化序列
+    I2C_WriteCmd(0xAE); // 关闭显示
+    I2C_WriteCmd(0x20); // 设置内存地址模式
+    I2C_WriteCmd(0x10); // 页地址模式
+    I2C_WriteCmd(0xB0); // 设置页起始地址
+    I2C_WriteCmd(0xC8); // 设置扫描方向
+    I2C_WriteCmd(0x00); // 设置低列地址
+    I2C_WriteCmd(0x10); // 设置高列地址
+    I2C_WriteCmd(0x40); // 设置显示起始行
+    I2C_WriteCmd(0x81); // 对比度设置
+    I2C_WriteCmd(0xFF);
+    I2C_WriteCmd(0xA1); // 设置段重映射
+    I2C_WriteCmd(0xA6); // 正常显示
+    I2C_WriteCmd(0xA8); // 多路复用比率
+    I2C_WriteCmd(0x3F);
+    I2C_WriteCmd(0xD3); // 设置显示偏移
+    I2C_WriteCmd(0x00);
+    I2C_WriteCmd(0xD5); // 设置振荡器频率
+    I2C_WriteCmd(0x80);
+    I2C_WriteCmd(0xD9); // 设置预充电周期
+    I2C_WriteCmd(0xF1);
+    I2C_WriteCmd(0xDA); // 设置COM引脚硬件配置
+    I2C_WriteCmd(0x12);
+    I2C_WriteCmd(0xDB); // 设置VCOMH
+    I2C_WriteCmd(0x40);
+    I2C_WriteCmd(0x8D); // 电荷泵设置
+    I2C_WriteCmd(0x14);
+    I2C_WriteCmd(0xAF); // 开启显示
+    
+    OLED_Clear();
+}
+
+// 清屏
+void OLED_Clear(void)
+{
+    uint8_t i, j;
+    
+    for(i = 0; i < 8; i++)
+    {
+        OLED_SetPos(0, i);
+        for(j = 0; j < 128; j++)
+        {
+            I2C_WriteData(0x00);
+        }
+    }
+}
+
+// 显示一个字符 (8x16)
+void OLED_ShowChar(uint8_t x, uint8_t y, char chr)
+{
+    uint8_t c = 0, i = 0;
+    
+    c = chr - ' ';  // 得到偏移后的值
+    
+    if(x > 120)
+    {
+        x = 0;
+        y++;
+    }
+    
+    OLED_SetPos(x, y);
+    for(i = 0; i < 8; i++)
+    {
+        I2C_WriteData(Font8x16[c][i]);
+    }
+    
+    OLED_SetPos(x, y + 1);
+    for(i = 0; i < 8; i++)
+    {
+        I2C_WriteData(Font8x16[c][i + 8]);
+    }
+}
+
+// 显示字符串
+void OLED_ShowString(uint8_t x, uint8_t y, char *str, uint8_t size)
+{
+    while(*str != '\0')
+    {
+        OLED_ShowChar(x, y, *str);
+        x += 8;
+        if(x > 120)
+        {
+            x = 0;
+            y++;
+        }
+        str++;
+    }
+}
+
+// 显示数字
+void OLED_ShowNum(uint8_t x, uint8_t y, uint32_t num, uint8_t len)
+{
+    char str[10];
+    sprintf(str, "%d", num);
+    OLED_ShowString(x, y, str, 16);
+}
+
+OLED I2C.h代码
+#ifndef __OLED_I2C_H
+#define __OLED_I2C_H
+
+#include "stm32f10x.h"
+
+#define OLED_ADDRESS 0x78  // OLED I2C地址
+
+// 函数声明
+void OLED_Init(void);
+void OLED_Clear(void);
+void OLED_ShowString(uint8_t x, uint8_t y, char *str, uint8_t size);
+void I2C_WriteByte(uint8_t data);
+void I2C_Start(void);
+void I2C_Stop(void);
+void I2C_WriteCmd(uint8_t cmd);
+void I2C_WriteData(uint8_t data);
+
+#endif
+
+Font.h
+#ifndef __FONT_H
+#define __FONT_H
+
+#include "stm32f10x.h"
+
+// 8x16 ASCII字库声明
+extern const uint8_t Font8x16[][16];
+
+#endif
+
+Delay.c代码
+#include "delay.h"
+
+void Delay_ms(uint32_t nms)
+{
+    uint32_t i;
+    for(i = 0; i < nms; i++)
+    {
+        uint32_t j;
+        for(j = 0; j < 7200; j++);
+    }
+}
+
+void Delay_us(uint32_t nus)
+{
+    uint32_t i;
+    for(i = 0; i < nus; i++)
+    {
+        uint32_t j;
+        for(j = 0; j < 8; j++);
+    }
+}
+
+Delay.h代码
+#ifndef __DELAY_H
+#define __DELAY_H
+
+#include "stm32f10x.h"
+
+void Delay_ms(uint32_t nms);
+void Delay_us(uint32_t nus);
+
+#endif
+
+Main.c代码
+#include "stm32f10x.h"
+#include "stdio.h"
+#include "string.h"
+#include "oled_i2c.h"
+#include "delay.h"
+
+// 引脚定义
+#define LED_PIN GPIO_Pin_13
+#define LED_PORT GPIOC
+#define BUZZER_PIN GPIO_Pin_12  
+#define BUZZER_PORT GPIOB
+
+// 全局变量
+volatile uint8_t uart_rx_buffer[64];
+volatile uint8_t uart_rx_index = 0;
+volatile uint8_t uart_rx_flag = 0;
+
+uint16_t traffic_flow = 0;
+uint8_t risk_level = 0;
+char display_buffer[32];
+
+// 函数声明
+void GPIO_Configuration(void);
+void USART1_Configuration(void);
+void NVIC_Configuration(void);
+void TIM2_Configuration(void);
+void ParseData(char *data);
+void UpdateDisplay(void);
+void ControlLEDBuzzer(void);
+
+int main(void)
+{
+    SystemInit();
+    
+    // 初始化各模块
+    GPIO_Configuration();
+    USART1_Configuration();
+    NVIC_Configuration();
+    TIM2_Configuration();
+    OLED_Init();
+    
+    // 清屏并显示初始信息
+    OLED_Clear();
+    OLED_ShowString(0, 0, "Traffic System", 16);
+    OLED_ShowString(0, 2, "Waiting Data...", 16);
+    
+    while(1)
+    {
+        if(uart_rx_flag)
+        {
+            uart_rx_flag = 0;
+            ParseData((char*)uart_rx_buffer);
+            UpdateDisplay();
+            ControlLEDBuzzer();
+        }
+        Delay_ms(100);
+    }
+}
+
+// GPIO配置
+void GPIO_Configuration(void)
+{
+    GPIO_InitTypeDef GPIO_InitStructure;
+    
+    // 使能时钟
+    RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOA | RCC_APB2Periph_GPIOB | 
+                          RCC_APB2Periph_GPIOC | RCC_APB2Periph_AFIO, ENABLE);
+    
+    // LED配置 (PC13)
+    GPIO_InitStructure.GPIO_Pin = LED_PIN;
+    GPIO_InitStructure.GPIO_Mode = GPIO_Mode_Out_PP;
+    GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
+    GPIO_Init(LED_PORT, &GPIO_InitStructure);
+    
+    // 蜂鸣器配置 (PB12)
+    GPIO_InitStructure.GPIO_Pin = BUZZER_PIN;
+    GPIO_InitStructure.GPIO_Mode = GPIO_Mode_Out_PP;
+    GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
+    GPIO_Init(BUZZER_PORT, &GPIO_InitStructure);
+    
+    // 初始状态关闭
+    GPIO_SetBits(LED_PORT, LED_PIN);    // LED灭
+    GPIO_ResetBits(BUZZER_PORT, BUZZER_PIN); // 蜂鸣器关闭
+}
+
+// USART1配置 - 9600波特率
+void USART1_Configuration(void)
+{
+    GPIO_InitTypeDef GPIO_InitStructure;
+    USART_InitTypeDef USART_InitStructure;
+    
+    // 配置USART1引脚 PA9(TX) PA10(RX)
+    GPIO_InitStructure.GPIO_Pin = GPIO_Pin_9;
+    GPIO_InitStructure.GPIO_Mode = GPIO_Mode_AF_PP;
+    GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
+    GPIO_Init(GPIOA, &GPIO_InitStructure);
+    
+    GPIO_InitStructure.GPIO_Pin = GPIO_Pin_10;
+    GPIO_InitStructure.GPIO_Mode = GPIO_Mode_IN_FLOATING;
+    GPIO_Init(GPIOA, &GPIO_InitStructure);
+    
+    // USART1配置
+    RCC_APB2PeriphClockCmd(RCC_APB2Periph_USART1, ENABLE);
+    
+    USART_InitStructure.USART_BaudRate = 9600;
+    USART_InitStructure.USART_WordLength = USART_WordLength_8b;
+    USART_InitStructure.USART_StopBits = USART_StopBits_1;
+    USART_InitStructure.USART_Parity = USART_Parity_No;
+    USART_InitStructure.USART_HardwareFlowControl = USART_HardwareFlowControl_None;
+    USART_InitStructure.USART_Mode = USART_Mode_Rx | USART_Mode_Tx;
+    USART_Init(USART1, &USART_InitStructure);
+    
+    // 使能接收中断
+    USART_ITConfig(USART1, USART_IT_RXNE, ENABLE);
+    USART_Cmd(USART1, ENABLE);
+}
+
+// NVIC配置
+void NVIC_Configuration(void)
+{
+    NVIC_InitTypeDef NVIC_InitStructure;
+    
+    NVIC_PriorityGroupConfig(NVIC_PriorityGroup_2);
+    
+    // USART1中断配置
+    NVIC_InitStructure.NVIC_IRQChannel = USART1_IRQn;
+    NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 0;
+    NVIC_InitStructure.NVIC_IRQChannelSubPriority = 0;
+    NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
+    NVIC_Init(&NVIC_InitStructure);
+}
+
+// 定时器2配置 - 用于LED和蜂鸣器控制
+void TIM2_Configuration(void)
+{
+    TIM_TimeBaseInitTypeDef TIM_TimeBaseStructure;
+    
+    RCC_APB1PeriphClockCmd(RCC_APB1Periph_TIM2, ENABLE);
+    
+    // 定时器2配置：1kHz频率
+    TIM_TimeBaseStructure.TIM_Period = 1000 - 1;  // 1ms
+    TIM_TimeBaseStructure.TIM_Prescaler = 72 - 1; // 72MHz/72 = 1MHz
+    TIM_TimeBaseStructure.TIM_ClockDivision = 0;
+    TIM_TimeBaseStructure.TIM_CounterMode = TIM_CounterMode_Up;
+    TIM_TimeBaseInit(TIM2, &TIM_TimeBaseStructure);
+    
+    TIM_ITConfig(TIM2, TIM_IT_Update, ENABLE);
+    TIM_Cmd(TIM2, ENABLE);
+    
+    // 定时器2中断配置
+    NVIC_InitTypeDef NVIC_InitStructure;
+    NVIC_InitStructure.NVIC_IRQChannel = TIM2_IRQn;
+    NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 1;
+    NVIC_InitStructure.NVIC_IRQChannelSubPriority = 0;
+    NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
+    NVIC_Init(&NVIC_InitStructure);
+}
+
+// 解析接收到的数据
+void ParseData(char *data)
+{
+    // 数据格式示例: "FLOW:123,RISK:45"
+    char *flow_ptr = strstr(data, "FLOW:");
+    char *risk_ptr = strstr(data, "RISK:");
+    
+    if(flow_ptr && risk_ptr)
+    {
+        sscanf(flow_ptr + 5, "%hu", &traffic_flow);
+        sscanf(risk_ptr + 5, "%hhu", &risk_level);
+    }
+}
+
+// 更新OLED显示
+// 更新OLED显示
+void UpdateDisplay(void)
+{
+    OLED_Clear();
+    
+    // 显示标题
+    OLED_ShowString(0, 0, "Traffic Monitor", 16);
+    
+    // 显示车流量
+    OLED_ShowString(0, 2, "Flow:", 16);
+    char flow_str[10];
+    sprintf(flow_str, "%d", traffic_flow);
+    OLED_ShowString(40, 2, flow_str, 16);
+    
+    // 显示风险等级
+    OLED_ShowString(0, 4, "Risk:", 16);
+    char risk_str[10];
+    sprintf(risk_str, "%d%%", risk_level);
+    OLED_ShowString(40, 4, risk_str, 16);
+    
+    // 显示状态
+    OLED_ShowString(0, 6, "Status:", 16);
+    if(risk_level < 30)
+        OLED_ShowString(50, 6, "Safe", 16);
+    else if(risk_level < 60)
+        OLED_ShowString(50, 6, "Warning", 16);
+    else
+        OLED_ShowString(50, 6, "Danger!", 16);
+}// 控制LED和蜂鸣器
+void ControlLEDBuzzer(void)
+{
+    static uint16_t timer_count = 0;
+    static uint8_t led_state = 0;
+    static uint8_t buzzer_state = 0;
+    
+    if(risk_level < 30)
+    {
+        // 安全状态 - 关闭LED和蜂鸣器
+        GPIO_SetBits(LED_PORT, LED_PIN);
+        GPIO_ResetBits(BUZZER_PORT, BUZZER_PIN);
+    }
+    else if(risk_level < 60)
+    {
+        // 警告状态 - 1Hz闪烁
+        if(timer_count % 1000 == 0)  // 1Hz
+        {
+            led_state = !led_state;
+            GPIO_WriteBit(LED_PORT, LED_PIN, led_state ? Bit_RESET : Bit_SET);
+            
+            // 蜂鸣器1秒/次
+            if(timer_count % 2000 == 0)
+            {
+                buzzer_state = !buzzer_state;
+                GPIO_WriteBit(BUZZER_PORT, BUZZER_PIN, buzzer_state ? Bit_SET : Bit_RESET);
+            }
+        }
+    }
+    else
+    {
+        // 危险状态 - 5Hz快闪，蜂鸣器长鸣
+        if(timer_count % 200 == 0)  // 5Hz
+        {
+            led_state = !led_state;
+            GPIO_WriteBit(LED_PORT, LED_PIN, led_state ? Bit_RESET : Bit_SET);
+        }
+        
+        // 蜂鸣器长鸣
+        GPIO_SetBits(BUZZER_PORT, BUZZER_PIN);
+    }
+    
+    timer_count++;
+    if(timer_count >= 60000) timer_count = 0;
+}
+
+// USART1中断服务函数
+void USART1_IRQHandler(void)
+{
+    if(USART_GetITStatus(USART1, USART_IT_RXNE) != RESET)
+    {
+        uint8_t data = USART_ReceiveData(USART1);
+        
+        if(data == '\n')  // 以换行符结束
+        {
+            uart_rx_buffer[uart_rx_index] = '\0';
+            uart_rx_flag = 1;
+            uart_rx_index = 0;
+        }
+        else if(uart_rx_index < sizeof(uart_rx_buffer)-1)
+        {
+            uart_rx_buffer[uart_rx_index++] = data;
+        }
+        
+        USART_ClearITPendingBit(USART1, USART_IT_RXNE);
+    }
+}
+
+// 定时器2中断服务函数
+void TIM2_IRQHandler(void)
+{
+    if(TIM_GetITStatus(TIM2, TIM_IT_Update) != RESET)
+    {
+        ControlLEDBuzzer();
+        TIM_ClearITPendingBit(TIM2, TIM_IT_Update);
+    }
+}
